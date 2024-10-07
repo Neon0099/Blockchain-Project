@@ -9,8 +9,8 @@ class Blockchain:
         self.current_transactions = []
         self.chain = []
 
-        # Create the genesis block
-        self.new_block(previous_hash='1', proof=100)
+        # Create the genesis block with dynamic proof-of-work
+        self.new_block(proof=self.proof_of_work({'index': 0, 'previous_hash': '1'}), previous_hash='1')
 
     def new_block(self, proof, previous_hash=None):
         """
@@ -19,14 +19,13 @@ class Blockchain:
         :param previous_hash: Hash of previous Block
         :return: New Block
         """
-
         block = {
             'index': len(self.chain) + 1,
             'timestamp': time(),
             'transactions': self.current_transactions,
-            'proof': proof,  # This is the nonce
             'previous_hash': previous_hash or self.hash(self.chain[-1]),  # Hash of the previous block
-            'current_hash': None  # Placeholder for the current hash
+            'current_hash': None,  # Placeholder for the current hash
+            'proof': proof  # This is the nonce
         }
 
         # Calculate and store the current block's hash
@@ -53,6 +52,7 @@ class Blockchain:
             'amount': amount,
         })
 
+        print(f"Transaction added: {sender} -> {recipient} : {amount}")
         return self.last_block['index'] + 1
 
     @property
@@ -74,57 +74,54 @@ class Blockchain:
 
     def proof_of_work(self, last_block):
         """
-        Simple Proof of Work Algorithm:
-        - Find a number p' such that hash(pp') contains leading 2 zeroes
-        - Where p is the previous proof, and p' is the new proof
-        :param last_block: <dict> last Block
-        :return: <int> Proof (nonce)
+        Proof of Work Algorithm:
+        - Find a number p' (nonce) such that hash(last_block + p') contains leading 2 zeros
+        - p is the previous proof, and p' is the new proof
         """
-
-        last_proof = last_block['proof']
         last_hash = self.hash(last_block)
-
         proof = 0
-        while not self.valid_proof(last_proof, proof, last_hash):
+
+        while not self.valid_proof(last_hash, proof):
             proof += 1
 
         return proof
 
     @staticmethod
-    def valid_proof(last_proof, proof, last_hash):
+    def valid_proof(last_hash, proof):
         """
-        Validates the Proof: Does hash(last_proof, proof, last_hash) contain 2 leading zeroes?
-        :param last_proof: <int> Previous Proof
-        :param proof: <int> Current Proof
-        :param last_hash: <str> The hash of the Previous Block
+        Validates the Proof by checking if hash(last_hash + proof) starts with '00'.
+        :param last_hash: <str> The hash of the last block
+        :param proof: <int> The current proof
         :return: <bool> True if correct, False if not.
         """
-
-        guess = f'{last_proof}{proof}{last_hash}'.encode()
+        guess = f'{last_hash}{proof}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:2] == "00"  # Check if it starts with two zeroes
+        return guess_hash[:2] == "00"
 
-    def valid_chain(self, chain):
+    def valid_chain(self):
         """
-        Determine if a given blockchain is valid
-        :param chain: A blockchain
-        :return: True if valid, False if not
+        Determine if the current blockchain is valid by checking:
+        1. The previous_hash of each block matches the hash of the previous block.
+        2. The proof of work for each block is valid.
+        :return: True if the chain is valid, False otherwise
         """
-
-        last_block = chain[0]
+        last_block = self.chain[0]  # Genesis block
         current_index = 1
 
-        while current_index < len(chain):
-            block = chain[current_index]
+        while current_index < len(self.chain):
+            block = self.chain[current_index]
 
-            # Check that the previous hash is correct
+            # Check if the 'previous_hash' matches the hash of the last block
             if block['previous_hash'] != self.hash(last_block):
+                print(f"Invalid block at index {current_index}: Previous hash does not match.")
                 return False
 
-            # Check that the Proof of Work is correct
-            if not self.valid_proof(last_block['proof'], block['proof'], last_block['current_hash']):
+            # Check if the proof of work is valid for this block
+            if not self.valid_proof(self.hash(last_block), block['proof']):
+                print(f"Invalid proof of work at block {current_index}.")
                 return False
 
+            # Move to the next block
             last_block = block
             current_index += 1
 
@@ -138,7 +135,8 @@ def print_menu():
     print("1. Mine a new block")
     print("2. Add a new transaction")
     print("3. Display the blockchain")
-    print("4. Exit")
+    print("4. Validate the blockchain")
+    print("5. Exit")
 
 
 def mine_block(blockchain):
@@ -146,13 +144,13 @@ def mine_block(blockchain):
     Function to mine a new block
     """
     if not blockchain.current_transactions:
-        print("No transactions to mine.")
+        print("No transactions to mine. Block won't be mined.")
         return
 
     last_block = blockchain.last_block
     proof = blockchain.proof_of_work(last_block)
 
-    # Miner receives a reward for finding the proof
+    # Miner receives a reward for mining
     blockchain.new_transaction(
         sender="0",  # Reward for mining
         recipient=str(uuid4()).replace('-', ''),
@@ -184,6 +182,17 @@ def display_chain(blockchain):
         print(json.dumps(block, indent=4))
 
 
+def validate_blockchain(blockchain):
+    """
+    Function to validate the blockchain
+    """
+    is_valid = blockchain.valid_chain()
+    if is_valid:
+        print("Blockchain is valid.")
+    else:
+        print("Blockchain is invalid!")
+
+
 if __name__ == "__main__":
     # Instantiate the Blockchain
     blockchain = Blockchain()
@@ -199,6 +208,8 @@ if __name__ == "__main__":
         elif choice == '3':
             display_chain(blockchain)
         elif choice == '4':
+            validate_blockchain(blockchain)
+        elif choice == '5':
             print("Exiting...")
             break
         else:
